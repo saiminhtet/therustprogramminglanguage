@@ -72,6 +72,7 @@ impl Editor {
                 die(error);
             }
             if self.should_quit {
+                Terminal::cursor_position(&Position::default());
                 Terminal::clear_screen();
                 break;
             }
@@ -82,7 +83,8 @@ impl Editor {
         // Editor{}
         // Self { should_quit: false }
         let args: Vec<String> = env::args().collect();
-        let mut initial_status = String::from("HELP: Ctrl-Q = quit");
+        // let mut initial_status = String::from("HELP: Ctrl-Q = quit");
+        let mut initial_status = String::from("HELP: Ctrl-S = save| Ctrl-Q = quit");
         let document = if args.len() > 1 {
             let file_name = &args[1];
             // Document::open(&file_name).unwrap_or_default()
@@ -137,6 +139,23 @@ impl Editor {
         Terminal::flush()
     }
 
+    fn save(&mut self) {
+        if self.document.file_name.is_none() {
+            let new_name = self.prompt("Save as: ").unwrap_or(None);
+            if new_name.is_none() {
+                self.status_message = StatusMessage::from("Save aborted.".to_string());
+                return;
+            }
+            self.document.file_name = new_name;
+        }
+
+        if self.document.save().is_ok() {
+            self.status_message = StatusMessage::from("File saved successfully.".to_string());
+        } else {
+            self.status_message = StatusMessage::from("Error writing file!".to_string());
+        }
+    }
+
     fn draw_status_bar(&self) {
         // let spaces = " ".repeat(self.terminal.size().width as usize);
         let mut status;
@@ -188,6 +207,30 @@ impl Editor {
         match pressed_key {
             // Key::Ctrl('q') => panic!("Program end"),
             Key::Ctrl('q') => self.should_quit = true,
+            Key::Ctrl('s') => self.save(),
+            // Key::Char(c) => self.document.insert(&self.cursor_position, c),
+            // Key::Ctrl('s') => {
+            //     if self.document.file_name.is_none() {
+            //         self.document.file_name = Some(self.prompt("Save as: ")?);
+            //     }
+            //     if self.document.save().is_ok() {
+            //         self.status_message =
+            //             StatusMessage::from("File saved successfully.".to_string());
+            //     } else {
+            //         self.status_message = StatusMessage::from("Error writing file!".to_string());
+            //     }
+            // }
+            Key::Char(c) => {
+                self.document.insert(&self.cursor_position, c);
+                self.move_cursor(Key::Right);
+            }
+            Key::Delete => self.document.delete(&self.cursor_position),
+            Key::Backspace => {
+                if self.cursor_position.x > 0 || self.cursor_position.y > 0 {
+                    self.move_cursor(Key::Left);
+                    self.document.delete(&self.cursor_position);
+                }
+            }
             Key::Up 
                 | Key::Down 
                 | Key::Left 
@@ -342,16 +385,54 @@ impl Editor {
             }
         }
         }
+
+        // fn read_key() -> Result<Key, std::io::Error> {
+        //     loop {
+        //         if let Some(key) = io::stdin().lock().keys().next() {
+        //             return key;
+        //         }
+        //     }
+        // }
+        fn prompt(&mut self, prompt: &str) -> Result<Option<String>, std::io::Error> {
+            let mut result = String::new();
+            loop {
+                self.status_message = StatusMessage::from(format!("{}{}", prompt, result));
+                self.refresh_screen()?;
+                // if let Key::Char(c) = Terminal::read_key()? {
+                //     if c == '\n' {
+                //         self.status_message = StatusMessage::from(String::new());
+                //         break;
+                //     }
+                //     if !c.is_control() {
+                //         result.push(c);
+                //     }
+                // }
+                match Terminal::read_key()? {
+                    Key::Backspace => {
+                        if !result.is_empty() {
+                            result.truncate(result.len() - 1);
+                        }
+                    }
+                    Key::Char('\n') => break,
+                    Key::Char(c) => {
+                        if !c.is_control() {
+                            result.push(c);
+                        }
+                    }
+                    Key::Esc => {
+                        result.truncate(0);
+                        break;
+                    }
+                    _ => (),
+                }
+            }
+            self.status_message = StatusMessage::from(String::new());
+            if result.is_empty() {
+                return Ok(None);
+            }
+            Ok(Some(result))
+        }
     }
-
-    // fn read_key() -> Result<Key, std::io::Error> {
-    //     loop {
-    //         if let Some(key) = io::stdin().lock().keys().next() {
-    //             return key;
-    //         }
-    //     }
-    // }
-
     fn die(e: std::io::Error) {
         // print!("{}", termion::clear::All);
         Terminal::clear_screen();
