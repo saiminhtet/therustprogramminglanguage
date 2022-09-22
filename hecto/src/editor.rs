@@ -14,6 +14,7 @@ use termion::event::Key;
 const STATUS_FG_COLOR: color::Rgb = color::Rgb(63, 63, 63);
 const STATUS_BG_COLOR: color::Rgb = color::Rgb(239, 239, 239);
 const VERSION: &str = env!("CARGO_PKG_VERSION");
+const QUIT_TIMES: u8 = 3;
 
 #[derive(Default)]
 pub struct Position {
@@ -41,6 +42,7 @@ pub struct Editor {
     offset: Position,
     document: Document,
     status_message: StatusMessage,
+    quit_times: u8,
 }
 
 impl Editor {
@@ -85,12 +87,16 @@ impl Editor {
         let args: Vec<String> = env::args().collect();
         // let mut initial_status = String::from("HELP: Ctrl-Q = quit");
         let mut initial_status = String::from("HELP: Ctrl-S = save| Ctrl-Q = quit");
-        let document = if args.len() > 1 {
-            let file_name = &args[1];
-            // Document::open(&file_name).unwrap_or_default()
-            let doc = Document::open(&file_name);
-            if doc.is_ok() {
-                doc.unwrap()
+        // let document = if args.len() > 1 {
+        //     let file_name = &args[1];
+        //     // Document::open(&file_name).unwrap_or_default()
+        //     let doc = Document::open(&file_name);
+        //     if doc.is_ok() {
+        //         doc.unwrap()
+        let document = if let Some(file_name) = args.get(1) {
+            let doc = Document::open(file_name);
+            if let Ok(doc) = doc {
+                doc
             } else {
                 initial_status = format!("ERR: Could not open file: {}", file_name);
                 Document::default()
@@ -108,6 +114,7 @@ impl Editor {
             cursor_position: Position::default(),
             offset: Position::default(),
             status_message: StatusMessage::from(initial_status),
+            quit_times: QUIT_TIMES,
         }
     }
 
@@ -160,13 +167,24 @@ impl Editor {
         // let spaces = " ".repeat(self.terminal.size().width as usize);
         let mut status;
         let width = self.terminal.size().width as usize;
+        let modified_indicator = if self.document.is_dirty() {
+            " (modified)"
+        } else {
+            ""
+        };
+
         let mut file_name = "[No Name]".to_string();
         if let Some(name) = &self.document.file_name {
             file_name = name.clone();
             file_name.truncate(20);
         }
 
-        status = format!("{} - {} lines", file_name, self.document.len());
+        status = format!(
+            "{} - {} lines{}", 
+            file_name, 
+            self.document.len(),
+            modified_indicator
+            );
 
         // if width > status.len() {
         //     status.push_str(&" ".repeat(width - status.len()));
@@ -175,10 +193,13 @@ impl Editor {
                                      self.cursor_position.y.saturating_add(1),
                                      self.document.len()
                                     );
+
+        #[allow(clippy::integer_arithmetic)]
         let len = status.len() + line_indicator.len();
-        if width > len {
-            status.push_str(&" ".repeat(width - len));
-        }
+       // if width > len {
+       //     status.push_str(&" ".repeat(width - len));
+       // }
+        status.push_str(&" ".repeat(width.saturating_sub(len)));
         status = format!("{}{}", status, line_indicator);
         status.truncate(width);
 
@@ -206,7 +227,17 @@ impl Editor {
         let pressed_key = Terminal::read_key()?;
         match pressed_key {
             // Key::Ctrl('q') => panic!("Program end"),
-            Key::Ctrl('q') => self.should_quit = true,
+            Key::Ctrl('q') => {
+                if self.quit_times > 0 && self.document.is_dirty() {
+                    self.status_message = StatusMessage::from(format!(
+                            "WARNING! File has unsaved changes. Press Ctrl-Q {} more times to quit.",
+                            self.quit_times
+                            ));
+                    self.quit_times -= 1;
+                    return Ok(());
+                }
+                self.should_quit = true
+            }
             Key::Ctrl('s') => self.save(),
             // Key::Char(c) => self.document.insert(&self.cursor_position, c),
             // Key::Ctrl('s') => {
@@ -225,12 +256,13 @@ impl Editor {
                 self.move_cursor(Key::Right);
             }
             Key::Delete => self.document.delete(&self.cursor_position),
-            Key::Backspace => {
-                if self.cursor_position.x > 0 || self.cursor_position.y > 0 {
-                    self.move_cursor(Key::Left);
-                    self.document.delete(&self.cursor_position);
-                }
-            }
+             Key::Backspace => {
+                 if self.cursor_position.x > 0 || self.cursor_position.y > 0 {
+                     self.move_cursor(Key::Left);
+                     self.document.delete(&self.cursor_position);
+                 }
+             }
+            // Key::Backspace => result.truncate(result.len().saturating_sub(1)),
             Key::Up 
                 | Key::Down 
                 | Key::Left 
@@ -242,6 +274,10 @@ impl Editor {
             _ => (),
         }
         self.scroll();
+        if self.quit_times < QUIT_TIMES {
+            self.quit_times = QUIT_TIMES;
+            self.status_message = StatusMessage::from(String::new());
+        }
         Ok(())
     }
 
@@ -311,14 +347,16 @@ impl Editor {
             // Key::PageDown => y = height,
             Key::PageUp => {
                 y = if y > terminal_height {
-                    y - terminal_height
+                    // y - terminal_height
+                    y.saturating_sub(terminal_height)
                 } else {
                     0
                 }
             }
             Key::PageDown => {
                 y = if y.saturating_add(terminal_height) < height {
-                    y + terminal_height as usize
+                    // y + terminal_height as usize
+                    y.saturating_add(terminal_height)
                 } else {
                     height
                 }
@@ -342,6 +380,8 @@ impl Editor {
         let mut welcome_message = format!("Hecto editor -- version {}", VERSION);
         let width = self.terminal.size().width as usize;
         let len = welcome_message.len();
+        
+        #[allow(clippy::integer_arithmetic, clippy::integer_division)]
         let padding = width.saturating_sub(len) / 2;
         let spaces = " ".repeat(padding.saturating_sub(1));
         welcome_message = format!("~{}{}", spaces, welcome_message);
@@ -354,11 +394,13 @@ impl Editor {
         //let end = self.terminal.size().width as usize;
         let width = self.terminal.size().width as usize;
         let start = self.offset.x;
-        let end = self.offset.x + width;
+       // let end = self.offset.x + width;
+        let end = self.offset.x.saturating_add(width);
         let row = row.render(start, end);
         println!("{}\r", row)
     }
 
+    #[allow(clippy::integer_division, clippy::integer_arithmetic)]
     fn draw_rows(&self) {
         // for _ in 0..24 {
         //     println!("~\r");
@@ -376,8 +418,11 @@ impl Editor {
             // let welcome_message = format!("Hecto editor -- version {}", VERSION);
             // let width = std::cmp::min(self.terminal.size().width as usize, welcome_message.len());
             // println!("{}\r", &welcome_message[..width])
-            if let Some(row) = self.document.row(terminal_row as usize + self.offset.y) {    
-                self.draw_row(row);
+            // if let Some(row) = self.document.row(terminal_row as usize + self.offset.y) {
+            // if let Some(row) = self.document.row(self.offset.y.saturating_add(terminal_row as usize)) {    
+            if let Some(row) = self   
+                .document
+                .row(self.offset.y.saturating_add(terminal_row as uszie))
             } else if self.document.is_empty() && terminal_row == height / 3 {
                 self.draw_welcome_message();
             } else {
@@ -408,11 +453,12 @@ impl Editor {
                 //     }
                 // }
                 match Terminal::read_key()? {
-                    Key::Backspace => {
-                        if !result.is_empty() {
-                            result.truncate(result.len() - 1);
-                        }
-                    }
+                    // Key::Backspace => {
+                    //     if !result.is_empty() {
+                    //         result.truncate(result.len() - 1);
+                    //     }
+                    // }
+                    Key::Backspace => result.truncate(result.len().saturating_sub(1)),
                     Key::Char('\n') => break,
                     Key::Char(c) => {
                         if !c.is_control() {
