@@ -196,9 +196,9 @@ impl Editor {
 
         #[allow(clippy::integer_arithmetic)]
         let len = status.len() + line_indicator.len();
-       // if width > len {
-       //     status.push_str(&" ".repeat(width - len));
-       // }
+        // if width > len {
+        //     status.push_str(&" ".repeat(width - len));
+        // }
         status.push_str(&" ".repeat(width.saturating_sub(len)));
         status = format!("{}{}", status, line_indicator);
         status.truncate(width);
@@ -256,12 +256,12 @@ impl Editor {
                 self.move_cursor(Key::Right);
             }
             Key::Delete => self.document.delete(&self.cursor_position),
-             Key::Backspace => {
-                 if self.cursor_position.x > 0 || self.cursor_position.y > 0 {
-                     self.move_cursor(Key::Left);
-                     self.document.delete(&self.cursor_position);
-                 }
-             }
+            Key::Backspace => {
+                if self.cursor_position.x > 0 || self.cursor_position.y > 0 {
+                    self.move_cursor(Key::Left);
+                    self.document.delete(&self.cursor_position);
+                }
+            }
             // Key::Backspace => result.truncate(result.len().saturating_sub(1)),
             Key::Up 
                 | Key::Down 
@@ -380,7 +380,7 @@ impl Editor {
         let mut welcome_message = format!("Hecto editor -- version {}", VERSION);
         let width = self.terminal.size().width as usize;
         let len = welcome_message.len();
-        
+
         #[allow(clippy::integer_arithmetic, clippy::integer_division)]
         let padding = width.saturating_sub(len) / 2;
         let spaces = " ".repeat(padding.saturating_sub(1));
@@ -394,7 +394,7 @@ impl Editor {
         //let end = self.terminal.size().width as usize;
         let width = self.terminal.size().width as usize;
         let start = self.offset.x;
-       // let end = self.offset.x + width;
+        // let end = self.offset.x + width;
         let end = self.offset.x.saturating_add(width);
         let row = row.render(start, end);
         println!("{}\r", row)
@@ -422,14 +422,17 @@ impl Editor {
             // if let Some(row) = self.document.row(self.offset.y.saturating_add(terminal_row as usize)) {    
             if let Some(row) = self   
                 .document
-                .row(self.offset.y.saturating_add(terminal_row as uszie))
-            } else if self.document.is_empty() && terminal_row == height / 3 {
-                self.draw_welcome_message();
-            } else {
-                println!("~\r");
-            }
+                    .row(self.offset.y.saturating_add(terminal_row as usize))
+                    {
+                        self.draw_row(row);
+                    } else if self.document.is_empty() && terminal_row == height / 3 {
+                        self.draw_welcome_message();
+                    } else {
+                        println!("~\r");
+                    }
         }
         }
+
 
         // fn read_key() -> Result<Key, std::io::Error> {
         //     loop {
@@ -478,9 +481,11 @@ impl Editor {
             }
             Ok(Some(result))
         }
-    }
-    fn die(e: std::io::Error) {
-        // print!("{}", termion::clear::All);
-        Terminal::clear_screen();
-        panic!("{}", e);
-    }
+
+        }
+
+        fn die(e: std::io::Error) {
+            // print!("{}", termion::clear::All);
+            Terminal::clear_screen();
+            panic!("{}", e);
+        }

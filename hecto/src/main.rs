@@ -35,6 +35,7 @@ pub use terminal::Terminal;
 fn main() {
     // let editor = Editor::default();
     // editor.run();
+    //dbg!(std::usize::MAX); 
     Editor::default().run();
 
     // println!("Hello, world!");
