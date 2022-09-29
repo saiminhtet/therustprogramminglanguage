@@ -1,3 +1,4 @@
+use crate::FileType;
 use crate::Position;
 use crate::Row;
 use crate::SearchDirection;
@@ -10,25 +11,33 @@ pub struct Document {
     rows: Vec<Row>,
     pub file_name: Option<String>,
     dirty: bool,
+    file_type: FileType,
 }
 
 impl Document {
     pub fn open(filename: &str) -> Result<Self, std::io::Error> {
         let contents = fs::read_to_string(filename)?;
+        let file_type = FileType::from(filename);
         let mut rows = Vec::new();
         // rows.push(Row::from("Hello, World!"));
         // Self { rows }
         for value in contents.lines() {
             // rows.push(Row::from(value));
             let mut row = Row::from(value);
-            row.highlight();
+            // row.highlight(None);
+            row.highlight(file_type.highlighting_options(), None);
             rows.push(row);
         }
-        Ok(Self{
+        Ok(Self {
             rows,
             file_name: Some(filename.to_string()),
             dirty: false,
+            // file_type: FileType::from(filename),
+            file_type,
         })
+    }
+    pub fn file_type(&self) -> String {
+        self.file_type.name()
     }
 
     pub fn row(&self, index: usize) -> Option<&Row> {
@@ -63,8 +72,10 @@ impl Document {
         // let new_row = self.rows[at.y].split(at.x);
         let current_row = &mut self.rows[at.y];
         let mut new_row = current_row.split(at.x);
-        current_row.highlight();
-        new_row.highlight();
+        // current_row.highlight(None);
+        // new_row.highlight(None);
+        current_row.highlight(self.file_type.highlighting_options(), None);
+        new_row.highlight(self.file_type.highlighting_options(), None);
         #[allow(clippy::integer_arithmetic)]
         self.rows.insert(at.y + 1, new_row);
     }
@@ -76,14 +87,16 @@ impl Document {
         if at.y == self.rows.len() {
             let mut row = Row::default();
             row.insert(0, c);
-            row.highlight();
+            // row.highlight(None);
+            row.highlight(self.file_type.highlighting_options(), None);
             self.rows.push(row);
         } else {
             // let row = self.rows.get_mut(at.y).unwrap();
             #[allow(clippy::indexing_slicing)]
             let row = &mut self.rows[at.y];
             row.insert(at.x, c);
-            row.highlight();
+            // row.highlight(None);
+            row.highlight(self.file_type.highlighting_options(), None);
         }
     }
 
@@ -102,12 +115,14 @@ impl Document {
             // let row = self.rows.get_mut(at.y).unwrap();
             let row = &mut self.rows[at.y];
             row.append(&next_row);
-            row.highlight();
+            // row.highlight(None);
+            row.highlight(self.file_type.highlighting_options(), None);
         } else {
             // let row = self.rows.get_mut(at.y).unwrap();
             let row = &mut self.rows[at.y];
             row.delete(at.x);
-            row.highlight();
+            // row.highlight(None);
+            row.highlight(self.file_type.highlighting_options(), None);
         }
     }
 
@@ -118,9 +133,16 @@ impl Document {
                 file.write_all(row.as_bytes())?;
                 file.write_all(b"\n")?;
             }
+            self.file_type = FileType::from(file_name);
             self.dirty = false;
         }
         Ok(())
+    }
+
+    pub fn highlight(&mut self, word: Option<&str>) {
+        for row in &mut self.rows {
+            row.highlight(self.file_type.highlighting_options(), word);
+        }
     }
 
     pub fn is_dirty(&self) -> bool {
