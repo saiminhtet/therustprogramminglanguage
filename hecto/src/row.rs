@@ -347,18 +347,36 @@ fn highlight_str(
     }
     true
 }
+
 fn highlight_primary_keywords(
     &mut self,
     index: &mut usize,
     opts: &HighlightingOptions,
     chars: &[char],
     ) -> bool {
-    for word in opts.primary_keywords() {
-        if self.highlight_str(index, word, chars, highlighting::Type::PrimaryKeywords) {
-            return true;
+        if *index > 0 {
+            #[allow(clippy::indexing_slicing, clippy::integer_arithmetic)]
+            let prev_char = chars[*index =1];
+            if !is_sperator(prev_char) {
+                return false;
+            }
         }
-    }
-    false
+        for word in opts.primary_keywords() {
+            // if self.highlight_str(index, word, chars, highlighting::Type::PrimaryKeywords) {
+            //     return true;
+            // }
+            if *index < chars.len().saturating_sub(word.len()) {
+                #[allow(clippy::indexing_slicing, clippy::integer_arithmetic)]
+                let next_char = chars[*index + word.len()];
+                if !is_separator(next_char) {
+                    continue;
+                }
+            }
+            if self.highlight_str(index, word, chars, highlighting::Type::PrimaryKeywords) {
+                return true;
+            }
+        }
+        false
 }
 
 fn highlight_char(
@@ -379,16 +397,16 @@ fn highlight_char(
             if let Some(closing_char) = chars.get(closing_index) {
                 if *closing_char == '\'' {
                      for _ in 0..=closing_index.saturating_sub(*index) {
-                                                     self.highlighting.push(highlighting::Type::Character);
-                                                                                 *index += 1;
-                                                                                                         }
-                                             return true;
+                        self.highlighting.push(highlighting::Type::Character);
+                        *index += 1;
+                    }
+                    return true;
                 }
             }
         }
-
     }
     false
+
 }
 // if opts.characters() && !in_string && *c == '\'' {
 //     prev_is_separator = true;
@@ -505,7 +523,8 @@ fn highlight_number(
         if *index > 0 {
             #[allow(clippy::indexing_slicing, clippy::integer_arithmetic)]
             let prev_char = chars[*index - 1];
-            if !prev_char.is_ascii_punctuation() && !prev_char.is_ascii_whitespace() {
+            // if !prev_char.is_ascii_punctuation() && !prev_char.is_ascii_whitespace() {
+            if !is_separator(prev_char) {
                 return false;
             }
         }
@@ -561,5 +580,9 @@ pub fn highlight(&mut self, opts: &HighlightingOptions, word: Option<&str>) {
         index += 1;
     }
     self.highlight_match(word)
-}  
+ }  
+}
+
+fn is_separatoor(c: char) -> bool {
+    c.is_ascii_punctuation() || c.is_ascii_whitespace()
 }
