@@ -348,35 +348,64 @@ fn highlight_str(
     true
 }
 
+fn highlight_keywords(
+    &mut self,
+    index: &mut usize,
+    chars: &[char],
+    keywords: &[String],
+    hl_type: highlighting::Type,
+    ) -> bool {
+    if *index > 0 {
+        #[allow(clippy::indexing_slicing, clippy::integer_arithmetic)]
+        let prev_char = chars[*index - 1];
+        if !is_separator(prev_char) {
+            return false;
+        }
+    }
+    for word in keywords {
+        // if self.highlight_str(index, word, chars, highlighting::Type::PrimaryKeywords) {
+        //     return true;
+        // }
+        if *index < chars.len().saturating_sub(word.len()) {
+            #[allow(clippy::indexing_slicing, clippy::integer_arithmetic)]
+            let next_char = chars[*index + word.len()];
+            if !is_separator(next_char) {
+                continue;
+            }
+        }
+        if self.highlight_str(index, word, chars, hl_type) {
+            return true;
+        }
+    }
+    false
+}
+
 fn highlight_primary_keywords(
     &mut self,
     index: &mut usize,
     opts: &HighlightingOptions,
     chars: &[char],
     ) -> bool {
-        if *index > 0 {
-            #[allow(clippy::indexing_slicing, clippy::integer_arithmetic)]
-            let prev_char = chars[*index =1];
-            if !is_sperator(prev_char) {
-                return false;
-            }
-        }
-        for word in opts.primary_keywords() {
-            // if self.highlight_str(index, word, chars, highlighting::Type::PrimaryKeywords) {
-            //     return true;
-            // }
-            if *index < chars.len().saturating_sub(word.len()) {
-                #[allow(clippy::indexing_slicing, clippy::integer_arithmetic)]
-                let next_char = chars[*index + word.len()];
-                if !is_separator(next_char) {
-                    continue;
-                }
-            }
-            if self.highlight_str(index, word, chars, highlighting::Type::PrimaryKeywords) {
-                return true;
-            }
-        }
-        false
+    self.highlight_keywords(
+        index,
+        chars,
+        opts.primary_keywords(),
+        highlighting::Type::PrimaryKeywords,
+        )
+}
+
+fn highlight_secondary_keywords(
+    &mut self,
+    index: &mut usize,
+    opts: &HighlightingOptions,
+    chars: &[char],
+    ) -> bool {
+    self.highlight_keywords(
+        index,
+        chars,
+        opts.secondary_keywords(),
+        highlighting::Type::SecondaryKeywords,
+        )
 }
 
 fn highlight_char(
@@ -396,7 +425,7 @@ fn highlight_char(
 
             if let Some(closing_char) = chars.get(closing_index) {
                 if *closing_char == '\'' {
-                     for _ in 0..=closing_index.saturating_sub(*index) {
+                    for _ in 0..=closing_index.saturating_sub(*index) {
                         self.highlighting.push(highlighting::Type::Character);
                         *index += 1;
                     }
@@ -442,6 +471,34 @@ fn highlight_comment(
             if *next_char == '/' {
                 for _ in *index..chars.len() {
                     self.highlighting.push(highlighting::Type::Comment);
+                    *index += 1;
+                }
+                return true;
+            }
+        };
+    }
+    false
+}
+
+#[allow(clippy::indexing_slicing, clippy::integer_arithmetic)]
+fn highlight_multiline_comment(
+    &mut self,
+    index: &mut usize,
+    opts: &HighlightingOptions,
+    c: char,
+    chars: &[char],
+) -> bool {
+    if opts.comments() && c == '/' && *index < chars.len() {
+        if let Some(next_char) = chars.get(index.saturating_add(1)) {
+            if *next_char == '*' {
+                let closing_index = 
+                    if let Some(closing_index) = self.string[*index + 2..].find("*/") {
+                        *index + closing_index + 4
+                    } else {
+                        chars.len()
+                    };
+                for _ in *index..closing_index {
+                    self.highlighting.push(highlighting::Type::MultilineComment);
                     *index += 1;
                 }
                 return true;
@@ -540,49 +597,79 @@ fn highlight_number(
             }
         }
         return true;
+        }
+        false
     }
-    false
-}
 
-// if opts.numbers() {
-//     if (c.is_ascii_digit()
-//         // && (prev_is_separator || previous_highlight == &highlighting::Type::Number))
-//         // || (c == &'.' && previous_highlight == &highlighting::Type::Number)
-//         && (prev_is_separator || *previous_highlight == highlighting::Type::Number))
-//             || (*c == '.' && *previous_highlight == highlighting::Type::Number)
-//             {
-//                 highlighting.push(highlighting::Type::Number);
-//             } else {
-//                 highlighting.push(highlighting::Type::None);
-//             }
-// } else {
-//     highlighting.push(highlighting::Type::None);
-// }
-// prev_is_separator = c.is_ascii_punctuation() || c.is_ascii_whitespace();
-// index += 1;
-// }
-// 
-// self.highlighting = highlighting;
-// }
-pub fn highlight(&mut self, opts: &HighlightingOptions, word: Option<&str>) {
+    // if opts.numbers() {
+    //     if (c.is_ascii_digit()
+    //         // && (prev_is_separator || previous_highlight == &highlighting::Type::Number))
+    //         // || (c == &'.' && previous_highlight == &highlighting::Type::Number)
+    //         && (prev_is_separator || *previous_highlight == highlighting::Type::Number))
+    //             || (*c == '.' && *previous_highlight == highlighting::Type::Number)
+    //             {
+    //                 highlighting.push(highlighting::Type::Number);
+    //             } else {
+    //                 highlighting.push(highlighting::Type::None);
+    //             }
+    // } else {
+    //     highlighting.push(highlighting::Type::None);
+    // }
+    // prev_is_separator = c.is_ascii_punctuation() || c.is_ascii_whitespace();
+    // index += 1;
+    // }
+    // 
+    // self.highlighting = highlighting;
+    // }
+#[allow(clippy::indexing_slicing, clippy::integer_arithmetic)]
+pub fn highlight(
+    &mut self, 
+    opts: &HighlightingOptions, 
+    word: Option<&str>,
+    start_with_comment: bool,
+    ) -> bool {
     self.highlighting = Vec::new();
     let chars: Vec<char> = self.string.chars().collect();
     let mut index = 0;
+    let mut in_ml_comment = start_with_comment;
+    if in_ml_comment {
+        let closing_index = if let Some(closing_index) = self.string.find("*/") {
+            closing_index + 2
+        } else {
+            chars.len()
+        };
+        for _ in 0..closing_index {
+            self.highlighting.push(highlighting::Type::MultilineComment);
+        }
+        index = closing_index;
+    }
     while let Some(c) = chars.get(index) {
+        if self.highlight_multiline_comment(&mut index, &opts, *c, &chars) {
+            in_ml_comment = true;
+            continue;
+        }
+        in_ml_comment = false;
         if self.highlight_char(&mut index, opts, *c, &chars)
             || self.highlight_comment(&mut index, opts, *c, &chars)
-                || self.highlight_string(&mut index, opts, *c, &chars)
-                || self.highlight_number(&mut index, opts, *c, &chars)
-                {
-                    continue;
-                }
+           // || self.highlight_multiline_comment(&mut index, &opts, *c, &chars)
+            || self.highlight_primary_keywords(&mut index, &opts, &chars)
+            || self.highlight_secondary_keywords(&mut index, &opts, &chars)
+            || self.highlight_string(&mut index, opts, *c, &chars)
+            || self.highlight_number(&mut index, opts, *c, &chars)
+        {
+            continue;
+        }
         self.highlighting.push(highlighting::Type::None);
         index += 1;
     }
-    self.highlight_match(word)
- }  
+    self.highlight_match(word);
+    if in_ml_comment && &self.string[self.string.len().saturating_sub(2)..] != "*/" {
+        return true;
+    }
+    false
+}  
 }
 
-fn is_separatoor(c: char) -> bool {
+fn is_separator(c: char) -> bool {
     c.is_ascii_punctuation() || c.is_ascii_whitespace()
 }
