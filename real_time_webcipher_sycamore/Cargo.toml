@@ -1,0 +1,20 @@
+[package]
+name = "real_time_webcipher_sycamore"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+sycamore = "0.8.1"
+
+[profile.release]
+debug = true
+# no backtrace for panic on release
+panic = 'abort'
+# optimize all codegen units
+codegen-units = 1
+# optimize aggressively for size
+opt-level = 'z'
+# enable link time optimization
+lto = true
